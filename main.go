@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -62,8 +63,8 @@ func main() {
 		fmt.Printf("%s: Directories that contain imports that you want to exclude. Optional.\n", excludeToArg)
 		fmt.Printf("%s: Directories that contain exports that you want to exclude. Optional.\n", excludeFromArg)
 		fmt.Println("Examples:")
-		fmt.Printf("\trefaudit %s ~/code/launchdarkly/foundation/ %s ~/code/launchdarkly/gonfalon ~/code/launchdarkly/event-recorder | tee ~/unused1.json\n", fromArg, toArg)
-		fmt.Printf("\trefaudit %s ~/code/launchdarkly/foundation/ %s ~/code/launchdarkly/ %s ~/code/launchdarkly/foundation/ ~/code/launchdarkly/dev/ | tee ~/unused2.json\n", fromArg, toArg, excludeToArg)
+		fmt.Printf("\trefaudit %s /path/to/library/ %s /path/to/app1 /path/to/app2 | tee ~/unused1.json\n", fromArg, toArg)
+		fmt.Printf("\trefaudit %s /path/to/library/ %s /path/to/app1 %s /path/to/app1/exclude | tee ~/unused2.json\n", fromArg, toArg, excludeToArg)
 		os.Exit(1)
 	}
 
@@ -100,6 +101,10 @@ func main() {
 	for k := range refs {
 		rpt.Imported = append(rpt.Imported, k)
 	}
+	sort.Strings(rpt.Exported)
+	sort.Strings(rpt.Imported)
+	sort.Strings(rpt.UnusedExports)
+
 	outB, err := json.MarshalIndent(rpt, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to marshal output: %v", err)
