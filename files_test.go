@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,7 +10,7 @@ import (
 func TestFileList(t *testing.T) {
 	found := []string{}
 	searchDir := expandPath(".")
-	require.NoError(t, runOnFiles([]string{searchDir}, []string{"go.mod", "go.sum"}, func(file string) error {
+	require.NoError(t, runOnFiles(context.TODO(), []string{searchDir}, []string{"go.mod", "go.sum"}, func(file string) error {
 		found = append(found, file)
 		return nil
 	}))
@@ -21,7 +22,7 @@ func TestFileList(t *testing.T) {
 
 func TestExports(t *testing.T) {
 	searchDir := expandPath("./internal/dummy/")
-	exports, err := findExports([]string{searchDir}, []string{})
+	exports, err := findExports(context.TODO(), []string{searchDir}, []string{})
 	require.NoError(t, err)
 	if _, ok := exports["github.com/launchdarkly-labs/refaudit/internal/dummy.ExportedFunction"]; !ok {
 		require.FailNow(t, "missing export")
@@ -33,7 +34,7 @@ func TestExports(t *testing.T) {
 
 func TestImports(t *testing.T) {
 	searchDir := expandPath("./internal/dummy/")
-	imports, err := findImports([]string{searchDir}, []string{})
+	imports, err := findImports(context.TODO(), []string{searchDir}, []string{})
 	require.NoError(t, err)
 	if _, ok := imports["fmt.Print"]; !ok {
 		require.FailNow(t, "missing import")

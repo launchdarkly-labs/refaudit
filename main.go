@@ -2,17 +2,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -34,6 +37,9 @@ type Report struct {
 }
 
 func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
 	// parse input
 	from := []string{}
 	excludeFrom := []string{}
@@ -74,13 +80,13 @@ func main() {
 	fmt.Fprintf(os.Stderr, "%s: %s\n", excludeToArg, strings.Join(excludeTo, ", "))
 	fmt.Fprintf(os.Stderr, "%s: %s\n", excludeFromArg, strings.Join(excludeFrom, ", "))
 
-	globals, err := findExports(from, excludeFrom)
+	globals, err := findExports(ctx, from, excludeFrom)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v", err)
 		os.Exit(2)
 	}
 
-	refs, err := findImports(to, excludeTo)
+	refs, err := findImports(ctx, to, excludeTo)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v", err)
 		os.Exit(2)
@@ -123,51 +129,79 @@ func expandPath(path string) string {
 }
 
 // runOnFiles runs fn on every file/dir specified, recursively.
-func runOnFiles(files []string, excluding []string, fn func(file string) error) error {
-	vendor := fmt.Sprintf("%svendor%s", fsep, fsep)
-	for _, file := range files {
-		err := filepath.Walk(file,
-			func(path string, info os.FileInfo, err error) error {
-				if err != nil {
-					return err
+func runOnFiles(ctx context.Context, files []string, excluding []string, fn func(file string) error) error {
+	g, ctx := errgroup.WithContext(ctx)
+	filesChan := make(chan string, 4) // buffered chan since walking can take a while
+
+	// set up file consumer
+	g.Go(func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case f, ok := <-filesChan:
+				if ok {
+					if err := fn(f); err != nil {
+						return err
+					}
+				} else {
+					return nil
 				}
-				// don't run on vendor sub-directories
-				if strings.Contains(path, vendor) {
-					return filepath.SkipDir
-				}
-				// exclude any top-level paths as needed
-				for _, ex := range excluding {
-					if strings.TrimSuffix(path, fsep) == strings.TrimSuffix(ex, fsep) {
+			}
+		}
+	})
+
+	// walk the dir tree, producing files
+	g.Go(func() error {
+		defer close(filesChan)
+		vendor := fmt.Sprintf("%svendor%s", fsep, fsep)
+		for _, file := range files {
+			err := filepath.Walk(file,
+				func(path string, info os.FileInfo, err error) error {
+					if err != nil {
+						return err
+					}
+					if ctx.Err() != nil {
+						return ctx.Err()
+					}
+					// don't run on vendor sub-directories
+					if strings.Contains(path, vendor) {
 						return filepath.SkipDir
 					}
-				}
-				// don't run on dirs
-				if info.IsDir() {
-					return nil
-				}
-				// don't run on non-go files
-				if !strings.HasSuffix(path, ".go") {
-					return nil
-				}
-				// run fn on the file
-				if err := fn(path); err != nil {
-					return err
-				}
+					// exclude any top-level paths as needed
+					for _, ex := range excluding {
+						if strings.TrimSuffix(path, fsep) == strings.TrimSuffix(ex, fsep) {
+							return filepath.SkipDir
+						}
+					}
+					// don't run on dirs
+					if info.IsDir() {
+						return nil
+					}
+					// don't run on non-go files
+					if !strings.HasSuffix(path, ".go") {
+						return nil
+					}
+					// send to consumer
+					filesChan <- path
 
-				return nil
-			})
-		if err != nil {
-			return fmt.Errorf("could not walk %s: %w", file, err)
+					return nil
+				})
+			if err != nil {
+				return fmt.Errorf("could not walk %s: %w", file, err)
+			}
 		}
-	}
-	return nil
+		return nil
+	})
+
+	return g.Wait()
 }
 
-func findExports(from []string, excludeFrom []string) (map[string]interface{}, error) {
+func findExports(ctx context.Context, from []string, excludeFrom []string) (map[string]interface{}, error) {
 	globals := make(map[string]interface{})
 
 	fs := token.NewFileSet()
-	err := runOnFiles(from, excludeFrom, func(file string) error {
+	err := runOnFiles(ctx, from, excludeFrom, func(file string) error {
 		f, err := parser.ParseFile(fs, file, nil, parser.AllErrors)
 		if err != nil {
 			return fmt.Errorf("could not parse %s: %w", file, err)
@@ -260,11 +294,11 @@ func (v exportVisitor) add(n ast.Node) {
 	}
 }
 
-func findImports(to []string, excludeTo []string) (map[string]interface{}, error) {
+func findImports(ctx context.Context, to []string, excludeTo []string) (map[string]interface{}, error) {
 	refs := make(map[string]interface{})
 
 	fs := token.NewFileSet()
-	err := runOnFiles(to, excludeTo, func(file string) error {
+	err := runOnFiles(ctx, to, excludeTo, func(file string) error {
 		f, err := parser.ParseFile(fs, file, nil, parser.AllErrors)
 
 		if err != nil {
