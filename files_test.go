@@ -44,6 +44,9 @@ func TestImports(t *testing.T) {
 	imports, err := findImports(context.TODO(), []string{searchDir}, []string{})
 	require.NoError(t, err)
 	if _, ok := imports["fmt.Print"]; !ok {
-		require.FailNow(t, "missing import")
+		assert.FailNow(t, "missing imported function call")
+	}
+	if _, ok := imports["fmt.Stringer"]; !ok {
+		assert.FailNow(t, "missing imported interface ref")
 	}
 }
