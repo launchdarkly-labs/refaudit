@@ -8,3 +8,7 @@ func ExportedFunction() {
 }
 
 var ExportedVariable = 10
+
+type ExportedStruct struct{}
+
+type ExportedInterface interface{}

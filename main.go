@@ -99,17 +99,15 @@ func main() {
 		UnusedExports: []string{},
 	}
 	for k := range globals {
-		rpt.Exported = append(rpt.Exported, k)
+		rpt.Exported = sortedInsert(rpt.Exported, k)
+		//rpt.Exported = append(rpt.Exported, k)
 		if _, ok := refs[k]; !ok {
-			rpt.UnusedExports = append(rpt.UnusedExports, k)
+			rpt.UnusedExports = sortedInsert(rpt.UnusedExports, k)
 		}
 	}
 	for k := range refs {
-		rpt.Imported = append(rpt.Imported, k)
+		rpt.Imported = sortedInsert(rpt.Imported, k)
 	}
-	sort.Strings(rpt.Exported)
-	sort.Strings(rpt.Imported)
-	sort.Strings(rpt.UnusedExports)
 
 	outB, err := json.MarshalIndent(rpt, "", "  ")
 	if err != nil {
@@ -117,6 +115,20 @@ func main() {
 		os.Exit(2)
 	}
 	fmt.Println(string(outB))
+}
+
+// sortedInsert
+func sortedInsert(list []string, elem string) []string {
+	// find spot to insert element
+	i := sort.Search(len(list), func(i int) bool { return list[i] >= elem })
+	// handle not found case
+	if i == len(list) {
+		return append(list, elem)
+	}
+	// shift over and set
+	list = append(list[:i+1], list[i:]...)
+	list[i] = elem
+	return list
 }
 
 func expandPath(path string) string {
@@ -264,13 +276,18 @@ func (v exportVisitor) Visit(n ast.Node) ast.Visitor {
 	case *ast.FuncDecl:
 		v.add(d.Name)
 	case *ast.GenDecl:
-		if d.Tok != token.VAR {
-			return v
-		}
-		for _, spec := range d.Specs {
-			if value, ok := spec.(*ast.ValueSpec); ok {
-				for _, name := range value.Names {
-					v.add(name)
+		if d.Tok == token.VAR {
+			for _, spec := range d.Specs {
+				if value, ok := spec.(*ast.ValueSpec); ok {
+					for _, name := range value.Names {
+						v.add(name)
+					}
+				}
+			}
+		} else if d.Tok == token.TYPE {
+			for _, spec := range d.Specs {
+				if value, ok := spec.(*ast.TypeSpec); ok {
+					v.add(value.Name)
 				}
 			}
 		}

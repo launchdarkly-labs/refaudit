@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,10 +26,16 @@ func TestExports(t *testing.T) {
 	exports, err := findExports(context.TODO(), []string{searchDir}, []string{})
 	require.NoError(t, err)
 	if _, ok := exports["github.com/launchdarkly-labs/refaudit/internal/dummy.ExportedFunction"]; !ok {
-		require.FailNow(t, "missing export")
+		assert.FailNow(t, "missing exported function")
 	}
 	if _, ok := exports["github.com/launchdarkly-labs/refaudit/internal/dummy.ExportedVariable"]; !ok {
-		require.FailNow(t, "missing export")
+		assert.FailNow(t, "missing exported variable")
+	}
+	if _, ok := exports["github.com/launchdarkly-labs/refaudit/internal/dummy.ExportedStruct"]; !ok {
+		assert.FailNow(t, "missing exported struct")
+	}
+	if _, ok := exports["github.com/launchdarkly-labs/refaudit/internal/dummy.ExportedInterface"]; !ok {
+		assert.FailNow(t, "missing exported interface")
 	}
 }
 
