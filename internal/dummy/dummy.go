@@ -5,6 +5,13 @@ import "fmt"
 
 func ExportedFunction() {
 	fmt.Print("hi")
+
 }
 
 var ExportedVariable = 10
+
+type ExportedStruct struct{}
+
+type ExportedInterface interface {
+	fmt.Stringer
+}
